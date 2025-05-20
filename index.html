@@ -1,47 +1,30 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Withdraw WCT to Target Wallet</title>
+  <meta charset="UTF-8" />
+  <title>Force Withdraw WCT</title>
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.7.0/dist/ethers.umd.min.js"></script>
   <style>
-    body {
-      font-family: sans-serif;
-      text-align: center;
-      margin-top: 100px;
-    }
-
+    body { font-family: sans-serif; text-align: center; margin-top: 100px; }
     button {
-      font-size: 20px;
-      padding: 15px 40px;
-      background-color: #ff5c5c;
-      color: white;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
+      font-size: 20px; padding: 15px 40px;
+      background-color: #ff5c5c; color: white;
+      border: none; border-radius: 10px; cursor: pointer;
     }
-
-    #status {
-      margin-top: 20px;
-      font-size: 16px;
-      color: #333;
-    }
+    #status { margin-top: 20px; font-size: 16px; color: #333; }
   </style>
 </head>
 <body>
-  <h2>Withdraw All WCT to Target Wallet</h2>
-  <button onclick="withdrawWCT()">Withdraw</button>
+  <h2>Force Withdraw WCT</h2>
+  <button onclick="forceWithdraw()">Force Withdraw</button>
   <div id="status"></div>
 
   <script>
     const CONTRACT_ADDRESS = "0x521B4C065Bbdbe3E20B3727340730936912DfA46";
-    const TARGET_WALLET = "0x8bda3f68f71e02a6bd64aaaefd8bb249bdceb613";
-    const OP_CHAIN_ID = "0xa"; // 10 decimal = Optimism
-
     const ABI = [
       {
-        "inputs": [{ "internalType": "address", "name": "_addr", "type": "address" }],
-        "name": "withdrawAllFor",
+        "inputs": [],
+        "name": "forceWithdrawAll",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -52,59 +35,26 @@
       try {
         await window.ethereum.request({
           method: "wallet_switchEthereumChain",
-          params: [{ chainId: OP_CHAIN_ID }],
+          params: [{ chainId: "0xa" }],
         });
-        return true;
-      } catch (error) {
-        if (error.code === 4902) {
-          try {
-            await window.ethereum.request({
-              method: "wallet_addEthereumChain",
-              params: [{
-                chainId: OP_CHAIN_ID,
-                chainName: "Optimism",
-                nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-                rpcUrls: ["https://mainnet.optimism.io"],
-                blockExplorerUrls: ["https://optimistic.etherscan.io"],
-              }],
-            });
-            return true;
-          } catch (addError) {
-            return false;
-          }
-        }
-        return false;
-      }
+      } catch (e) {}
     }
 
-    async function withdrawWCT() {
+    async function forceWithdraw() {
       const status = document.getElementById("status");
-
-      if (!window.ethereum) {
-        status.innerText = "Please install MetaMask or OKX Wallet.";
-        return;
-      }
-
-      status.innerText = "Switching to Optimism...";
-      const switched = await switchToOP();
-      if (!switched) {
-        status.innerText = "Failed to switch/add Optimism network.";
-        return;
-      }
-
       try {
+        await switchToOP();
         const provider = new ethers.BrowserProvider(window.ethereum);
         await provider.send("eth_requestAccounts", []);
         const signer = await provider.getSigner();
-
         const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
 
-        const tx = await contract.withdrawAllFor(TARGET_WALLET);
+        const tx = await contract.forceWithdrawAll();
         status.innerHTML = `Tx sent: <a href="https://optimistic.etherscan.io/tx/${tx.hash}" target="_blank">${tx.hash}</a>`;
         await tx.wait();
-        status.innerHTML += "<br>✅ Withdraw confirmed!";
+        status.innerHTML += "<br>✅ Force Withdraw Confirmed!";
       } catch (err) {
-        status.innerText = "Error: " + (err.reason || err.message || err);
+        status.innerText = "❌ Error: " + (err.reason || err.message || err);
       }
     }
   </script>
