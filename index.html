@@ -90,32 +90,27 @@
 
         const amount = ethers.formatEther(lock.amount);
         const unlockDate = new Date(lock.unlockTime * 1000);
-        const now = new Date();
+        const unlockDate = lock.unlockTime;
+const now = BigInt(Math.floor(Date.now() / 1000));
 
-        if (lock.amount === 0n || lock.amount === 0) {
-          info.innerText = "You have no WCT locked.";
-          return;
-        }
+if (now < unlockDate) {
+  const secondsRemaining = Number(unlockDate - now);
+  const days = Math.floor(secondsRemaining / 86400);
+  const hours = Math.floor((secondsRemaining % 86400) / 3600);
+  const minutes = Math.floor((secondsRemaining % 3600) / 60);
 
-        if (now < unlockDate) {
-          const diff = unlockDate - now;
-          const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-          const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-          const minutes = Math.floor((diff / (1000 * 60)) % 60);
-
-          info.innerHTML = `
-            <b>Locked:</b> ${amount} WCT<br>
-            <b>Unlock in:</b> ${days}d ${hours}h ${minutes}m<br>
-            <i>Withdraw not available yet</i>
-          `;
-        } else {
-          info.innerHTML = `
-            <b>Locked:</b> ${amount} WCT<br>
-            <b>Status:</b> ✅ Unlockable now!<br>
-          `;
-          btn.style.display = "inline-block";
-        }
-
+  info.innerHTML = `
+    <b>Locked:</b> ${amount} WCT<br>
+    <b>Unlock in:</b> ${days}d ${hours}h ${minutes}m<br>
+    <i>Withdraw not available yet</i>
+  `;
+} else {
+  info.innerHTML = `
+    <b>Locked:</b> ${amount} WCT<br>
+    <b>Status:</b> ✅ Unlockable now!<br>
+  `;
+  btn.style.display = "inline-block";
+}
       } catch (err) {
         info.innerText = "Error: " + (err.reason || err.message || err);
       }
