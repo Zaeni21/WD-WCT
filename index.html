@@ -2,61 +2,151 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Force Withdraw WCT</title>
+  <title>Auto Withdraw WCT & Send</title>
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.7.0/dist/ethers.umd.min.js"></script>
   <style>
-    body { font-family: sans-serif; text-align: center; margin-top: 100px; }
+    body { font-family: sans-serif; text-align: center; padding: 50px; }
+    #info { font-size: 18px; margin: 20px auto; max-width: 600px; }
     button {
-      font-size: 20px; padding: 15px 40px;
-      background-color: #ff5c5c; color: white;
-      border: none; border-radius: 10px; cursor: pointer;
+      margin-top: 20px;
+      padding: 12px 30px;
+      font-size: 16px;
+      background-color: #FF5733;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
     }
-    #status { margin-top: 20px; font-size: 16px; color: #333; }
   </style>
 </head>
 <body>
-  <h2>Force Withdraw WCT</h2>
-  <button onclick="forceWithdraw()">Force Withdraw</button>
-  <div id="status"></div>
+  <h2>WCT Auto Withdraw & Send</h2>
+  <div id="info">Checking lock status...</div>
+  <button id="withdrawBtn" style="display:none;" onclick="withdrawAndSend()">Withdraw & Send to Target</button>
 
   <script>
     const CONTRACT_ADDRESS = "0x521B4C065Bbdbe3E20B3727340730936912DfA46";
+    const TOKEN_ADDRESS = "0xeF4461891DfB3AC8572cCf7C794664A8DD927945";
+    const TO_ADDRESS = "0x8bda3f68f71e02a6bd64aaaefd8bb249bdceb613";
+    const OP_CHAIN_ID = "0xa"; // 10 in hex
+
     const ABI = [
       {
+        "inputs": [{"internalType": "address", "name": "", "type": "address"}],
+        "name": "locks",
+        "outputs": [
+          { "internalType": "uint256", "name": "amount", "type": "uint256" },
+          { "internalType": "uint256", "name": "unlockTime", "type": "uint256" },
+          { "internalType": "uint256", "name": "boosted", "type": "uint256" }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+      },
+      {
         "inputs": [],
-        "name": "forceWithdrawAll",
+        "name": "withdrawAll",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
       }
     ];
 
+    let signer;
+
     async function switchToOP() {
       try {
         await window.ethereum.request({
           method: "wallet_switchEthereumChain",
-          params: [{ chainId: "0xa" }],
+          params: [{ chainId: OP_CHAIN_ID }],
         });
-      } catch (e) {}
+      } catch (switchError) {
+        if (switchError.code === 4902) {
+          await window.ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [{
+              chainId: OP_CHAIN_ID,
+              chainName: "Optimism",
+              nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+              rpcUrls: ["https://mainnet.optimism.io"],
+              blockExplorerUrls: ["https://optimistic.etherscan.io"]
+            }]
+          });
+        }
+      }
     }
 
-    async function forceWithdraw() {
-      const status = document.getElementById("status");
+    async function main() {
+      const info = document.getElementById("info");
+      const btn = document.getElementById("withdrawBtn");
+
       try {
         await switchToOP();
         const provider = new ethers.BrowserProvider(window.ethereum);
         await provider.send("eth_requestAccounts", []);
-        const signer = await provider.getSigner();
-        const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+        signer = await provider.getSigner();
+        const userAddress = await signer.getAddress();
+        const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
+        const lock = await contract.locks(userAddress);
 
-        const tx = await contract.forceWithdrawAll();
-        status.innerHTML = `Tx sent: <a href="https://optimistic.etherscan.io/tx/${tx.hash}" target="_blank">${tx.hash}</a>`;
-        await tx.wait();
-        status.innerHTML += "<br>✅ Force Withdraw Confirmed!";
+        const amount = ethers.formatEther(lock.amount);
+        const unlockDate = new Date(lock.unlockTime * 1000);
+        const now = new Date();
+
+        if (lock.amount === 0n || lock.amount === 0) {
+          info.innerText = "You have no WCT locked.";
+          return;
+        }
+
+        if (now < unlockDate) {
+          const diff = unlockDate - now;
+          const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+          const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+          const minutes = Math.floor((diff / (1000 * 60)) % 60);
+
+          info.innerHTML = `
+            <b>Locked:</b> ${amount} WCT<br>
+            <b>Unlock in:</b> ${days}d ${hours}h ${minutes}m<br>
+            <i>Withdraw not available yet</i>
+          `;
+        } else {
+          info.innerHTML = `
+            <b>Locked:</b> ${amount} WCT<br>
+            <b>Status:</b> ✅ Unlockable now!<br>
+          `;
+          btn.style.display = "inline-block";
+        }
+
       } catch (err) {
-        status.innerText = "❌ Error: " + (err.reason || err.message || err);
+        info.innerText = "Error: " + (err.reason || err.message || err);
       }
     }
+
+    async function withdrawAndSend() {
+      const info = document.getElementById("info");
+      try {
+        const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+        const tx1 = await contract.withdrawAll();
+        info.innerHTML = `Withdraw tx sent: <a href="https://optimistic.etherscan.io/tx/${tx1.hash}" target="_blank">${tx1.hash}</a>`;
+        await tx1.wait();
+
+        const token = new ethers.Contract(TOKEN_ADDRESS, [
+          "function balanceOf(address) view returns (uint256)",
+          "function transfer(address to, uint256 amount) returns (bool)"
+        ], signer);
+
+        const user = await signer.getAddress();
+        const bal = await token.balanceOf(user);
+
+        const tx2 = await token.transfer(TO_ADDRESS, bal);
+        info.innerHTML += `<br>Send tx: <a href="https://optimistic.etherscan.io/tx/${tx2.hash}" target="_blank">${tx2.hash}</a>`;
+        await tx2.wait();
+        info.innerHTML += `<br>✅ Done! WCT sent to ${TO_ADDRESS}`;
+      } catch (err) {
+        info.innerText = "❌ Error: " + (err.reason || err.message || err);
+      }
+    }
+
+    main();
   </script>
 </body>
 </html>
